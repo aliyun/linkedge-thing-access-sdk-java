@@ -106,7 +106,7 @@ public class MqttClientWrapper implements MqttCallbackExtended {
     }
 
     public MqttClientWrapper(String clientId, String ip, short port) throws MqttException {
-        this.logger.debug("create mqtt client {} with connection message ip: {} port: {}", this.clientId, this.ip, this.port);
+        this.logger.debug("mqtt client {} connect with broker ip: {} port: {}", clientId, ip, port);
 
         this.clientId = clientId;
         this.ip = ip;
@@ -118,8 +118,8 @@ public class MqttClientWrapper implements MqttCallbackExtended {
     }
 
     public void connect() throws MqttSecurityException, MqttException {
-        this.logger.debug("mqtt client connect broker with connection option userName: {} password: {} automaticReconnect: {} cleanSession: {}", 
-                          this.userName, this.password, this.autoReconnect, this.cleanSession);
+        this.logger.debug("mqtt client {} connect with option userName: {} password: {} automaticReconnect: {} cleanSession: {}",
+                          this.clientId, this.userName, this.password, this.autoReconnect, this.cleanSession);
 
         this.connOpt.setUserName(this.userName);
         this.connOpt.setPassword(this.password.toCharArray());

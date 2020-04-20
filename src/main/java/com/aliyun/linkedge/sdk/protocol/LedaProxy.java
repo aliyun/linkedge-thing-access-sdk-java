@@ -50,6 +50,7 @@ public class LedaProxy {
     private ExecutorService threadPool;
 
     private LedaProxy() {
+        this.logger.info("start java driver id {} name {}", this.driverId, this.driverName);
         this.initMqttClientWrapper();
 
         this.deviceList = new Hashtable<String, LedaDevice>();
