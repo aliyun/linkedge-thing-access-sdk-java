@@ -43,6 +43,9 @@ jdk            | 1.8.0+  |
 ```
 
 ## 快速开始 - demo
+### Link IoT Edge标准版JDK安装注意事项
+1. Link IoT Edge以root身份运行，所以在安装JDK时需要以root身份安装，否则运行java驱动时会提示找不到java命令。
+2. JDK安装时必须保证java程序位于如下目录/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin，否则运行java驱动时会提示找不到java命令。
 
 `demo_led` 示例演示将设备接入Link IoT Edge的过程。
 
