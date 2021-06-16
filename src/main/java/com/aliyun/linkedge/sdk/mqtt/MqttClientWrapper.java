@@ -106,7 +106,7 @@ public class MqttClientWrapper implements MqttCallbackExtended {
     }
 
     public MqttClientWrapper(String clientId, String ip, short port) throws MqttException {
-        this.logger.debug("mqtt client {} connect with broker ip: {} port: {}", clientId, ip, port);
+        this.logger.info("mqtt client {} connect with broker ip: {} port: {}", clientId, ip, port);
 
         this.clientId = clientId;
         this.ip = ip;
@@ -118,7 +118,7 @@ public class MqttClientWrapper implements MqttCallbackExtended {
     }
 
     public void connect() throws MqttSecurityException, MqttException {
-        this.logger.debug("mqtt client {} connect with option userName: {} password: {} automaticReconnect: {} cleanSession: {}",
+        this.logger.info("mqtt client {} connect with option userName: {} password: {} automaticReconnect: {} cleanSession: {}",
                           this.clientId, this.userName, this.password, this.autoReconnect, this.cleanSession);
 
         this.connOpt.setUserName(this.userName);
@@ -129,18 +129,22 @@ public class MqttClientWrapper implements MqttCallbackExtended {
     }
 
     public void disConnect() throws MqttException {
-        this.logger.debug("mqtt client {} disconnect with broker ip: {} port: {}", this.clientId, this.ip, this.port);
+        this.logger.info("mqtt client {} disconnect with broker ip: {} port: {}", this.clientId, this.ip, this.port);
         this.client.disconnect();
     }
 
+    public boolean isConnected() throws MqttException {
+        return this.client.isConnected();
+    }
+
     public void subscribe(String topicFilter) throws MqttException {
-        this.logger.debug("mqtt client {} subscribe topic: {}", this.clientId, topicFilter);
+        this.logger.info("mqtt client {} subscribe topic: {}", this.clientId, topicFilter);
         this.client.subscribe(topicFilter);
     }
 
     public void subscribe(String[] topicFilters) throws MqttException {
         for (String topicFilter : topicFilters) {
-            this.logger.debug("mqtt client {} subscribe topic: {}", this.clientId, topicFilter);
+            this.logger.info("mqtt client {} subscribe topic: {}", this.clientId, topicFilter);
         }
 
         this.client.subscribe(topicFilters);

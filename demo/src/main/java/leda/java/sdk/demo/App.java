@@ -82,9 +82,11 @@ public class App extends LedaDevice {
 
         HashMap<String, Object> data = new HashMap<String,Object>();
         System.out.println("methodName: " + methodName);
-        for (Map.Entry<String, Object> element : params.entrySet()) {
-            System.out.println("paramName: " + element.getKey());
-            System.out.println("paramValue: " + element.getValue());
+        if (params != null) {
+            for (Map.Entry<String, Object> element : params.entrySet()) {
+                System.out.println("paramName: " + element.getKey());
+                System.out.println("paramValue: " + element.getValue());
+            }
         }
 
         return new LedaData(LedaErrorCode.LE_SUCCESS, data);
@@ -121,9 +123,7 @@ public class App extends LedaDevice {
 
                 App device = new App(config.getString("productKey"), config.getString("deviceName"));
                 if (null != device) {
-                    if (LedaErrorCode.LE_SUCCESS == device.online()) {
-                        deviceList.add(device);
-                    }
+                    deviceList.add(device);
                 }
             }
         }
@@ -132,9 +132,14 @@ public class App extends LedaDevice {
             for (App device : deviceList) {
                 HashMap<String, Object> data = new HashMap<String, Object>();
                 data.put("temperature", device.getTemperature());
-    
-                device.reportProperties(data);
-                device.reportEvents("high_temperature", data);
+
+                int ret = LedaErrorCode.LE_SUCCESS;
+                ret = device.reportProperties(data);
+                ret |= device.reportEvents("high_temperature", data);
+                if (ret == LedaErrorCode.LEDA_ERROR_DEVICE_OFFLINE) {
+                    System.out.println("the connection with le is disconnected");
+                    device.online();
+                }
             }
 
             try {

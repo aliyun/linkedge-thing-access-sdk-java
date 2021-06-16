@@ -53,6 +53,14 @@ public class LedaDevice {
         return null;
     }
 
+    public void setIsOnline(boolean isOnline) {
+        this.isOnline = isOnline;
+    }
+
+    public boolean getIsOnline() {
+        return this.isOnline;
+    }
+
     /**
      * online device to cloud
      * @return the execution state, 0 is success, other is failed
@@ -98,7 +106,7 @@ public class LedaDevice {
         }
 
         if (!this.isOnline) {
-            return LedaErrorCode.LEDA_ERROR_DEVICE_UNREGISTER;
+            return LedaErrorCode.LEDA_ERROR_DEVICE_OFFLINE;
         }
 
         return LedaProxy.getInstance().proxyReportProperties(this.productKey, this.deviceName, properties);
@@ -120,7 +128,7 @@ public class LedaDevice {
         }
 
         if (!this.isOnline) {
-            return LedaErrorCode.LEDA_ERROR_DEVICE_UNREGISTER;
+            return LedaErrorCode.LEDA_ERROR_DEVICE_OFFLINE;
         }
 
         return LedaProxy.getInstance().proxyReportEvents(this.productKey, this.deviceName, eventName, outputData);

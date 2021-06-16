@@ -19,6 +19,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.aliyun.linkedge.sdk.LedaData;
 import com.aliyun.linkedge.sdk.LedaDevice;
 import com.aliyun.linkedge.sdk.value.RequestMessage;
+import com.aliyun.linkedge.sdk.value.RequestMessageEx;
 import com.aliyun.linkedge.sdk.value.ResponseMessage;
 import com.aliyun.linkedge.sdk.exception.LedaErrorCode;
 import com.aliyun.linkedge.sdk.mqtt.MqttClientWrapper;
@@ -49,9 +50,68 @@ public class LedaProxy {
     private Map<String, ResponseMessage> rspMsgQueque;
     private ExecutorService threadPool;
 
+    private Thread mqttConMonitor;
+
+    class MqttConnectionMonitor implements Runnable{
+        private final Logger logger = LoggerFactory.getLogger(MqttConnectionMonitor.class);
+
+        private MqttClientWrapper mqttClient;
+        private String driverId;
+        private Map<String, LedaDevice> deviceList;
+
+        MqttConnectionMonitor(MqttClientWrapper mqttClient, String driverId, Map<String, LedaDevice> deviceList) {
+            this.mqttClient = mqttClient;
+            this.driverId = driverId;
+            this.deviceList = deviceList;
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    if (!this.mqttClient.isConnected()) {
+                        this.logger.info("mqtt connection is disconnected, try reconnect...");
+
+                        // 1. offline device
+                        for (LedaDevice device : this.deviceList.values()) {
+                            if (device.getIsOnline()) {
+                                device.setIsOnline(false);
+                            }
+                        }
+
+                        // 2. reconnect mqtt broker
+                        this.mqttClient.connect();
+
+                        // 3. resubscribe mqtt topic
+                        String [] topicFilters = {
+                            String.format("edge/iot/driver/proxy/x/response/driver/%s/x/x/get_config", this.driverId),
+                            String.format("edge/iot/driver/proxy/x/response/driver/%s/+/x/get_tsl", this.driverId),
+                            String.format("edge/iot/driver/proxy/x/response/driver/%s/+/x/get_tsl_ext", this.driverId),
+                            String.format("edge/iot/driver/proxy/x/response/device/%s/+/+/online", this.driverId),
+                            String.format("edge/iot/driver/proxy/x/response/device/%s/+/+/offline", this.driverId),
+                            String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/property/get", this.driverId),
+                            String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/property/set", this.driverId),
+                            String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/+", this.driverId)
+                        };
+                        this.mqttClient.subscribe(topicFilters);
+                    } else {
+                        this.logger.info("mqtt connection is connected");
+                    }
+                } catch (Exception e) {
+                    this.logger.warn("it's have exception {} happen when mqtt client reconnection", e);
+                }
+
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException e) {
+                    this.logger.warn("it's have exception {} happen when call thread sleep", e);
+                }
+            }
+        }
+    }
+
     private LedaProxy() {
         this.logger.info("start java driver id {} name {}", this.driverId, this.driverName);
-        this.initMqttClientWrapper();
 
         this.deviceList = new Hashtable<String, LedaDevice>();
         this.ledaTopic = new LedaTopic(this.driverId);
@@ -61,54 +121,60 @@ public class LedaProxy {
                                                  0,
                                                  TimeUnit.MILLISECONDS,
                                                  new LinkedBlockingQueue<Runnable>());
+        this.initMqttClientWrapper();
     }
 
     private void initMqttClientWrapper() {
-        while (true) {
-            try {
-                if (null == mqttClient) {
-                    if (System.getenv("FCBASE_IPADDR") != null) {
-                        // container driver
-                        this.mqttClient = new MqttClientWrapper(this.driverName, System.getenv("FCBASE_IPADDR"), LedaProxy.MQTT_BROKER_PORT);
-                    } else {
-                        // process driver
-                        this.mqttClient = new MqttClientWrapper(this.driverName, LedaProxy.MQTT_BROKER_IP, LedaProxy.MQTT_BROKER_PORT);
-                    }
-
-                    this.mqttClient.setUserName("driver&" + this.driverName + "&" + this.driverId);
-                    this.mqttClient.setPassword(this.driverId);
-                    this.mqttClient.setCleanSession(true);
-                    this.mqttClient.setAutoReconnect(true);
-                    this.mqttClient.setQos(0);
-                    this.mqttClient.setRetained(false);
-                    this.mqttClient.setProxyCallback(this);
+        try {
+            if (null == mqttClient) {
+                if (System.getenv("FCBASE_IPADDR") != null) {
+                    // container driver
+                    this.mqttClient = new MqttClientWrapper(this.driverName, System.getenv("FCBASE_IPADDR"), LedaProxy.MQTT_BROKER_PORT);
+                } else {
+                    // process driver
+                    this.mqttClient = new MqttClientWrapper(this.driverName, LedaProxy.MQTT_BROKER_IP, LedaProxy.MQTT_BROKER_PORT);
                 }
 
-                if (null != mqttClient) {
-                    this.mqttClient.connect();
-                    String [] topicFilters = {
-                        String.format("edge/iot/driver/proxy/x/response/driver/%s/x/x/get_config", this.driverId),
-                        String.format("edge/iot/driver/proxy/x/response/driver/%s/+/x/get_tsl", this.driverId),
-                        String.format("edge/iot/driver/proxy/x/response/driver/%s/+/x/get_tsl_ext", this.driverId),
-                        String.format("edge/iot/driver/proxy/x/response/device/%s/+/+/online", this.driverId),
-                        String.format("edge/iot/driver/proxy/x/response/device/%s/+/+/offline", this.driverId),
-                        String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/property/get", this.driverId),
-                        String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/property/set", this.driverId),
-                        String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/+", this.driverId)
-                    };
-                    this.mqttClient.subscribe(topicFilters);
-                    break;
-                }
-            } catch (Exception e) {
-                this.logger.warn("it's have exception {} happen when init mqtt client", e);
+                this.mqttClient.setUserName("driver&" + this.driverName + "&" + this.driverId);
+                this.mqttClient.setPassword(this.driverId);
+                this.mqttClient.setCleanSession(true);
+                this.mqttClient.setQos(0);
+                this.mqttClient.setRetained(false);
+                this.mqttClient.setProxyCallback(this);
             }
 
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                this.logger.warn("it's have exception {} happen when call thread sleep", e);
+            if (null != mqttClient) {
+                this.mqttClient.connect();
+                String [] topicFilters = {
+                    String.format("edge/iot/driver/proxy/x/response/driver/%s/x/x/get_config", this.driverId),
+                    String.format("edge/iot/driver/proxy/x/response/driver/%s/+/x/get_tsl", this.driverId),
+                    String.format("edge/iot/driver/proxy/x/response/driver/%s/+/x/get_tsl_ext", this.driverId),
+                    String.format("edge/iot/driver/proxy/x/response/device/%s/+/+/online", this.driverId),
+                    String.format("edge/iot/driver/proxy/x/response/device/%s/+/+/offline", this.driverId),
+                    String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/property/get", this.driverId),
+                    String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/property/set", this.driverId),
+                    String.format("edge/iot/driver/proxy/x/request/device/%s/+/+/callservice/thing/service/+", this.driverId)
+                };
+                this.mqttClient.subscribe(topicFilters);
             }
+        } catch (Exception e) {
+            this.logger.warn("it's have exception {} happen when init mqtt client", e);
         }
+
+        this.mqttConMonitor = new Thread(new MqttConnectionMonitor(this.mqttClient, this.driverId, this.deviceList));
+        this.mqttConMonitor.start();
+    }
+
+    public boolean isConnected() {
+        boolean ret = false;
+
+        try {
+            ret = this.mqttClient.isConnected();
+        } catch (Exception e) {
+            this.logger.warn("it's have exception {} happen when get mqtt client connection state", e);
+        }
+
+        return ret;
     }
 
     public LedaTopic getLedaTopic() {
@@ -225,6 +291,11 @@ public class LedaProxy {
     }
 
     public String proxyGetConfig() {
+        if (!this.isConnected()) {
+            this.logger.info("mqtt connection is disconnected, try...");
+            return null;
+        }
+
         ResponseMessage response = this.sendSyncRequest(this.ledaTopic.getConfigTopic());
         if (null == response) {
             return null;
@@ -240,6 +311,11 @@ public class LedaProxy {
     }
 
     public String proxyGetTsl(String productKey) {
+        if (!this.isConnected()) {
+            this.logger.info("mqtt connection is disconnected, try...");
+            return null;
+        }
+
         ResponseMessage response = this.sendSyncRequest(this.ledaTopic.getTslTopic(productKey));
         if (null == response) {
             return null;
@@ -255,6 +331,11 @@ public class LedaProxy {
     }
 
     public String proxyGetTslConfig(String productKey) {
+        if (!this.isConnected()) {
+            this.logger.info("mqtt connection is disconnected, try...");
+            return null;
+        }
+
         ResponseMessage response = this.sendSyncRequest(this.ledaTopic.getTslConfigTopic(productKey));
         if (null == response) {
             return null;
@@ -270,6 +351,11 @@ public class LedaProxy {
     }
 
     public int proxyOnline(String productKey, String deviceName) {
+        if (!this.isConnected()) {
+            this.logger.info("mqtt connection is disconnected, try...");
+            return LedaErrorCode.LE_ERROR_UNKNOWN;
+        }
+
         ResponseMessage response = this.sendSyncRequest(this.ledaTopic.loginTopic(productKey, deviceName));
         if (null == response) {
             return LedaErrorCode.LE_ERROR_UNKNOWN;
@@ -279,6 +365,11 @@ public class LedaProxy {
     }
 
     public int proxyOffline(String productKey, String deviceName) {
+        if (!this.isConnected()) {
+            this.logger.info("mqtt connection is disconnected, try...");
+            return LedaErrorCode.LE_ERROR_UNKNOWN;
+        }
+
         ResponseMessage response = this.sendSyncRequest(this.ledaTopic.logoutTopic(productKey, deviceName));
         if (null == response) {
             return LedaErrorCode.LE_ERROR_UNKNOWN;
@@ -346,12 +437,7 @@ public class LedaProxy {
     private void parseRequestMessage(final String topic, final String message) {
         if (-1 != topic.indexOf("callservice")) {
             String [] topicElementArray = topic.split("/");
-            String condition = "property";
-            if (topicElementArray.length == 15 && condition.equals(topicElementArray[13])) {
-                this.threadPool.execute(new LedaDeviceCallback(topicElementArray[8], topicElementArray[9], topicElementArray[topicElementArray.length - 1], message, this));
-            } else {
-                this.threadPool.execute(new LedaDeviceCallback(topicElementArray[8], topicElementArray[9], topicElementArray[topicElementArray.length - 1], message, this));
-            }
+            this.threadPool.execute(new LedaDeviceCallback(topicElementArray[8], topicElementArray[9], topicElementArray[topicElementArray.length - 1], message, this));
         }
     }
 
@@ -427,12 +513,18 @@ public class LedaProxy {
             String topic;
             Object object;
 
-            RequestMessage reqMsg = JSON.parseObject(this.message, RequestMessage.class);
-            HashMap<String, Object> params = JSON.parseObject(((JSONObject)(reqMsg.getParams())).toJSONString(), HashMap.class);
-
-            object = this.ledaProxy.getDeviceList().get(this.productKey + this.deviceName).callService(this.methodName, params);
-            topic = this.ledaProxy.getLedaTopic().serviceReplyTopic(this.productKey, this.deviceName, this.methodName);
-            this.ledaProxy.sendResponse(methodName, topic, reqMsg.getId(), object);
+            if (-1 != this.message.indexOf("params")) {
+                RequestMessage reqMsg = JSON.parseObject(this.message, RequestMessage.class);
+                HashMap<String, Object> params = JSON.parseObject(((JSONObject)(reqMsg.getParams())).toJSONString(), HashMap.class);
+                object = this.ledaProxy.getDeviceList().get(this.productKey + this.deviceName).callService(this.methodName, params);
+                topic = this.ledaProxy.getLedaTopic().serviceReplyTopic(this.productKey, this.deviceName, this.methodName);
+                this.ledaProxy.sendResponse(methodName, topic, reqMsg.getId(), object);
+            } else {
+                RequestMessageEx reqMsg = JSON.parseObject(this.message, RequestMessageEx.class);
+                object = this.ledaProxy.getDeviceList().get(this.productKey + this.deviceName).callService(this.methodName, null);
+                topic = this.ledaProxy.getLedaTopic().serviceReplyTopic(this.productKey, this.deviceName, this.methodName);
+                this.ledaProxy.sendResponse(methodName, topic, reqMsg.getId(), object);
+            }
         }
 
         @Override
